@@ -1,0 +1,38 @@
+{
+  "name": "@reachflow/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=../.env src/server.ts",
+    "worker": "tsx watch --env-file=../.env src/workers/email.worker.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "db": "tsx --env-file=../.env src/scripts/migrate.ts",
+    "sender": "tsx --env-file=../.env src/scripts/create-sender.ts",
+    "setup": "node --import tsx src/scripts/setup.ts",
+    "search:init": "node --env-file=../.env --import tsx src/scripts/search-init.ts",
+    "doctor": "node --env-file=../.env --import tsx src/scripts/doctor.ts",
+    "start": "node --env-file=../.env dist/server.js",
+    "start:worker": "node --env-file=../.env dist/workers/email.worker.js"
+  },
+  "dependencies": {
+    "@bull-board/api": "^6.0.0",
+    "@bull-board/express": "^6.0.0",
+    "bullmq": "^5.60.0",
+    "connect-redis": "^9.0.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.0",
+    "google-auth-library": "^10.0.0",
+    "ioredis": "^5.8.0",
+    "nodemailer": "^10.3.1",
+    "pg": "^8.16.0",
+    "redis": "^5.0.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/express-session": "^1.18.0",
+    "@types/node": "^24.0.0",
+    "@types/nodemailer": "^7.0.0",
+    "@types/pg": "^8.15.0"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "reachflow",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,worker,frontend \"npm run dev -w backend\" \"npm run worker -w backend\" \"npm run dev -w frontend\"",
+    "build": "npm run build --workspaces",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:ui": "vitest run",
+    "test:all": "npm test && npm run test:ui",
+    "infra:up": "docker compose up -d --wait",
+    "setup": "npm run setup -w backend",
+    "doctor": "npm run doctor -w backend"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "concurrently": "^9.0.0",
+    "cssnano": "^9.9.0",
+    "jsdom": "^30.1.3",
+    "prettier": "^3.9.10",
+    "supertest": "^7.3.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^5.0.5"
+  }
+}

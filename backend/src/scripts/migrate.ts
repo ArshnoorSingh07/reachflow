@@ -1,0 +1,10 @@
+import { db } from "../config/database.js";
+await db.query(`CREATE TABLE IF NOT EXISTS users(id text PRIMARY KEY,email text NOT NULL,name text NOT NULL,avatar text,slack_webhook text);
+CREATE TABLE IF NOT EXISTS senders(id uuid PRIMARY KEY,user_id text REFERENCES users(id),name text NOT NULL,email text NOT NULL,smtp_user text NOT NULL,smtp_password text NOT NULL,smtp_host text NOT NULL,smtp_port integer NOT NULL);
+CREATE TABLE IF NOT EXISTS batches(id uuid PRIMARY KEY,user_id text REFERENCES users(id),idempotency_key text NOT NULL,payload_hash text NOT NULL,UNIQUE(user_id,idempotency_key));
+CREATE TABLE IF NOT EXISTS emails(id uuid PRIMARY KEY,user_id text REFERENCES users(id),batch_id uuid REFERENCES batches(id),sender_id uuid REFERENCES senders(id),recipient text NOT NULL,subject text NOT NULL,body text NOT NULL,scheduled_at timestamptz NOT NULL,sent_at timestamptz,status text NOT NULL DEFAULT 'scheduled',delay_ms integer NOT NULL,hourly_limit integer NOT NULL,error text,preview_url text,version integer NOT NULL DEFAULT 1,indexed_version integer NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS emails_user_status ON emails(user_id,status,scheduled_at);
+CREATE TABLE IF NOT EXISTS notifications(id text PRIMARY KEY,user_id text REFERENCES users(id),sender_id uuid REFERENCES senders(id),created_at timestamptz DEFAULT now(),sent_at timestamptz);`);
+console.log("Database ready");
+await db.end();
+process.exit(0);
