@@ -4,12 +4,12 @@ Run commands from the repository root (`reachflow/`).
 
 ## 1. Install the prerequisites
 
-Use Node.js 22.12 or newer. Docker Desktop is not installed in the environment used to build this version. Install the appropriate Mac edition from [Docker’s official instructions](https://docs.docker.com/desktop/setup/install/mac-install/) and launch it. You complete Docker’s first-run agreement and any system prompts yourself.
+Use Node.js 22.12 or newer and Docker with Compose v2. On macOS, install and launch Docker Desktop using [Docker’s official instructions](https://docs.docker.com/desktop/setup/install/mac-install/). On other platforms, use the corresponding Docker installation. Confirm the Docker engine is running before starting the infrastructure.
 
 ## 2. Prepare configuration and services
 
 ```sh
-npm install
+npm ci
 npm run setup
 npm run infra:up
 npm run db -w backend
@@ -17,7 +17,7 @@ npm run search:init -w backend
 npm run doctor
 ```
 
-`setup` creates `.env` with generated session and encryption keys if the file does not exist. It never overwrites an existing file. A local `.env` has already been created in this checkout. Keep its ENCRYPTION_KEY stable: changing it makes previously stored SMTP/webhook credentials unreadable.
+`setup` creates `.env` with generated session and encryption keys if the file does not exist. It never overwrites an existing file. Keep its ENCRYPTION_KEY stable: changing it makes previously stored SMTP/webhook credentials unreadable.
 
 PostgreSQL, Redis, and Elasticsearch run in Docker with persistent named volumes. Ports are bound to your local machine. The `infra:up` command waits for health checks. Elasticsearch may take a minute to become ready. OAuth credentials are deliberately blank until you add your own.
 
@@ -55,10 +55,25 @@ Use `localhost` consistently. `127.0.0.1` is a different browser cookie host; mi
 2. Enable **Incoming Webhooks**.
 3. Use an HTTPS app URL for Slack OAuth. In **OAuth & Permissions**, register `https://YOUR-APP-HOST/api/integrations/slack/callback` and add the bot scope **incoming-webhook**. The standard Slack web-app flow rejects the localhost HTTP callback.
 4. Copy Client ID and Client Secret from Basic Information into `.env` as SLACK_CLIENT_ID and SLACK_CLIENT_SECRET.
-5. Restart API and worker so environment changes are loaded. Open **Integrations → Connect Slack**.
+5. Configure and start the HTTPS instance described below so environment changes are loaded. Open that HTTPS URL, sign in, and choose **Integrations → Connect Slack**.
 6. Complete the actual Slack consent and channel picker. The dashboard returns with Slack marked connected.
 
 Slack workspace policies may require admin approval. Use one HTTPS origin that serves both the built frontend and backend routes. Set WEB_URL and API_URL to that origin for the HTTPS instance; register the Google JavaScript origin and `/auth/google/callback` URI for that host as well. Start Google sign-in and Connect Slack from that same HTTPS origin so its session cookie is present on callback. The ordinary localhost instance can remain separate for development. A temporary Cloudflare hostname changes when its tunnel is recreated, requiring updated provider callbacks. Keep a named tunnel or permanent HTTPS deployment for a stable callback URL.
+
+For a temporary local demo, install `cloudflared` from Cloudflare’s official distribution and start a tunnel in its own terminal:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:4100
+```
+
+Build the app, then start a separate API instance using the HTTPS origin printed by the tunnel (replace both placeholders):
+
+```sh
+npm run build
+NODE_ENV=production PORT=4100 API_URL=https://YOUR-TUNNEL-HOST WEB_URL=https://YOUR-TUNNEL-HOST node --env-file=.env backend/dist/server.js
+```
+
+Keep the worker from `npm run dev` running, or start it separately with `npm run start:worker -w backend`. Register the exact tunnel callbacks with Google and Slack before signing in. Leave Docker, the tunnel, and the API/worker running during the demo. A quick tunnel is temporary and can expire; never commit its current hostname as a permanent application address.
 
 See [Slack’s OAuth authorization-code guide](https://docs.slack.dev/authentication/installing-with-oauth/). This app exchanges the code on the backend and stores the returned channel webhook encrypted in PostgreSQL. A handwritten webhook or a log line does not replace the OAuth/demo requirement.
 
@@ -95,7 +110,7 @@ The Redis-backed tests exercise atomic admission and queue/worker replacement. T
 ```sh
 docker compose exec postgres createdb -U reachflow reachflow_test
 DATABASE_URL=postgres://reachflow:reachflow@localhost:5432/reachflow_test npm run db -w backend
-TEST_DATABASE_URL=postgres://reachflow:reachflow@localhost:5432/reachflow_test npm test
+TEST_DATABASE_URL=postgres://reachflow:reachflow@localhost:5432/reachflow_test TEST_REDIS_URL=redis://localhost:6379 npm run test:all
 ```
 
 Tests insert uniquely named fixtures and clean them up. Never point test configuration at a production database. Missing integration service URLs cause those tests to be explicitly skipped, not counted as passing.

@@ -4,10 +4,12 @@ A full-stack email scheduler built for the ReachInbox internship assignment. A m
 
 ## Start here
 
-See **[SETUP.md](SETUP.md)** for the full from-scratch Google/Slack/Docker setup and live demo steps. See **[docs/API.md](docs/API.md)** for request/response documentation and **[docs/AUTHENTICATION.md](docs/AUTHENTICATION.md)** for identity, session, CSRF, and access-control behavior.
+Prerequisites: Node.js 22.12+ with npm, Docker Compose, and your own Google OAuth and Slack app credentials. Ethereal test senders are created through the app.
+
+See **[SETUP.md](SETUP.md)** for the full from-scratch Google/Slack/Docker setup and live demo steps. See **[docs/API.md](docs/API.md)** for request/response documentation and **[docs/AUTHENTICATION.md](docs/AUTHENTICATION.md)** for identity, session, CSRF, and access-control behavior. Completed checks are recorded in **[docs/VERIFICATION.md](docs/VERIFICATION.md)**.
 
 ```sh
-npm install
+npm ci
 npm run setup
 npm run infra:up
 npm run db -w backend
@@ -17,7 +19,7 @@ npm run doctor
 npm run dev
 ```
 
-Open **http://localhost:5173** and sign in with Google or create an email/password account. The dashboard requires a real authenticated session.
+Open **http://localhost:5173** and sign in with Google or create an email/password account. The dashboard requires a real authenticated session. `npm run dev` starts the frontend, API, and worker together. Slack OAuth requires the HTTPS setup in [SETUP.md](SETUP.md#5-connect-slack); ordinary Google login works with the registered localhost callback.
 
 ## Structure
 
@@ -74,7 +76,7 @@ React supplies the MVC view layer; the backend returns JSON. Routes select contr
 | TypeScript + Express               | MVC API, separate worker process                                                                     |
 | PostgreSQL, BullMQ, Redis, no cron | Durable batches/outbox, delayed jobs, reconciliation                                                 |
 | Multiple senders + Ethereal        | Provision accounts in Sending accounts; encrypted SMTP credentials                                   |
-| Concurrency, spacing, hourly quota | Configurable worker count, sender locks, atomic shared Redis admission                               |
+| Concurrency, spacing, hourly quota | Configurable worker concurrency, sender locks, atomic shared Redis admission                               |
 | Restart persistence + idempotency  | Persistent volumes/AOF, unique batch keys/job IDs, conservative SMTP recovery                        |
 | Searchable scheduled/sent emails   | Versioned Elasticsearch indexing of recipient/subject/body                                           |
 | Live BullMQ dashboard              | Operator-only Bull Board at /queues                                                                  |
@@ -96,7 +98,13 @@ npm run test:all       # Service/security tests + React workflow tests
 npm audit
 ```
 
-Integration tests are explicitly skipped unless TEST_REDIS_URL / TEST_DATABASE_URL are supplied. SETUP.md explains the isolated PostgreSQL test database and Redis checks. Automated build/component tests do not prove real OAuth, SMTP, Slack, or restart behavior against live accounts; complete the live checklist before submission.
+Integration tests are explicitly skipped unless TEST_REDIS_URL / TEST_DATABASE_URL are supplied. After creating and migrating `reachflow_test` as described in SETUP.md, run all tests with both services:
+
+```sh
+TEST_DATABASE_URL=postgres://reachflow:reachflow@localhost:5432/reachflow_test TEST_REDIS_URL=redis://localhost:6379 npm run test:all
+```
+
+The latest recorded run passed 25 backend tests and 17 frontend tests with no skips. See [verification details](docs/VERIFICATION.md). Automated build/component tests do not prove real OAuth, SMTP, Slack, or restart behavior against live accounts; complete the live checklist before submission.
 
 ## Production process layout
 
@@ -109,9 +117,13 @@ NODE_ENV=production npm run start:worker -w backend
 
 Express serves the built frontend and API together in production. Set WEB_URL/API_URL to that HTTPS origin and register matching provider callbacks. Put it behind a reverse proxy, configure correct proxy trust, and keep the worker running independently. Do not use the Vite development server for a hosted submission.
 
-## Submission still required
+## Submission checklist
 
-Create the private GitHub repository, verify/invite the assignment’s reviewer usernames (`Mitrajit` and `Yadav036`), configure live accounts/services, record the maximum-five-minute demo, and submit repository/video/hosted links through the supplied ClickUp form. This checkout does not create those accounts or submit the application.
+- Keep the GitHub repository private and grant access to `Mitrajit` and `Yadav036`.
+- Record a demo of at most five minutes showing Google login, scheduling, Scheduled/Sent views, and stop/start recovery of future jobs. Show a live Slack rate-limit alert; a log line does not satisfy that requirement. Briefly show search and Bull Board if time permits.
+- Submit the repository and accessible video links through the [assignment submission form](https://forms.clickup.com/9005062261/f/8cbwp3n-8876/6NNNJ92DV93PQTAYST).
+
+Cloud deployment is not required by the supplied assignment. A local demo is sufficient; the Slack OAuth flow still needs a registered HTTPS callback. Keep `.env` and credentials out of the repository and recording.
 
 ## Repeat the live verification
 
