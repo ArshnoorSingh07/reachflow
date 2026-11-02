@@ -1,4 +1,5 @@
-import { env } from "../config/env.js";
+import "../config/env.js";
+import { searchFetch } from "../config/search.js";
 import { db } from "../config/database.js";
 import { redis } from "../config/redis.js";
 let failed = false;
@@ -17,7 +18,7 @@ for (const [name, check] of [
   [
     "Elasticsearch",
     async () => {
-      const response = await fetch(`${env.ELASTIC_URL}/_cluster/health`, {
+      const response = await searchFetch("_cluster/health", {
         signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) throw Error(`HTTP ${response.status}`);

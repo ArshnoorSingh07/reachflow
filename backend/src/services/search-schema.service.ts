@@ -1,6 +1,6 @@
-import { emailIndex } from "../config/search.js";
+import { emailIndex, searchFetch } from "../config/search.js";
 export async function initializeSearch() {
-  const response = await fetch(`${process.env.ELASTIC_URL}/${emailIndex}`, {
+  const response = await searchFetch(`${emailIndex}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

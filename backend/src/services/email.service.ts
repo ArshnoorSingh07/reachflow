@@ -1,4 +1,4 @@
-import { emailIndex } from "../config/search.js";
+import { emailIndex, searchFetch } from "../config/search.js";
 import { listEmailRecords } from "../models/email.model.js";
 import { BatchModel } from "../models/batch.model.js";
 import { enqueuePending } from "./queue.service.js";
@@ -19,8 +19,8 @@ export const EmailService = {
   ) {
     let ids: string[] | null = null;
     if (query) {
-      const r = await fetch(
-        `${process.env.ELASTIC_URL}/${emailIndex}/_search`,
+      const r = await searchFetch(
+        `${emailIndex}/_search`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },

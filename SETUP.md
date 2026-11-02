@@ -1,6 +1,6 @@
 # Local setup from scratch
 
-Run commands from `/Users/arshnoorsingh/work/reachflow`.
+Run commands from the repository root (`reachflow/`).
 
 ## 1. Install the prerequisites
 

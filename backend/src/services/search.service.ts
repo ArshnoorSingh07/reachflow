@@ -1,4 +1,4 @@
-import { emailIndex } from "../config/search.js";
+import { emailIndex, searchFetch } from "../config/search.js";
 import { db } from "../config/database.js";
 export async function indexEmail(id: string) {
   const { rows } = await db.query(
@@ -6,8 +6,8 @@ export async function indexEmail(id: string) {
     [id],
   );
   if (!rows[0]) return;
-  const r = await fetch(
-    `${process.env.ELASTIC_URL}/${emailIndex}/_doc/${id}?version=${rows[0].version}&version_type=external_gte`,
+  const r = await searchFetch(
+    `${emailIndex}/_doc/${id}?version=${rows[0].version}&version_type=external_gte`,
     {
       method: "PUT",
       headers: { "content-type": "application/json" },
