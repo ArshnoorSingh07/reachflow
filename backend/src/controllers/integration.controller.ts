@@ -1,3 +1,4 @@
+import { slackRedirectUri } from "../services/slack-config.service.js";
 import type { RequestHandler } from "express";
 import { randomBytes } from "node:crypto";
 import { UserModel } from "../models/user.model.js";
@@ -17,8 +18,13 @@ export const connectSlack: RequestHandler = (req, res) => {
     res.redirect(`${process.env.WEB_URL}/?view=integrations&error=slack`);
     return;
   }
+  const redirectUri = slackRedirectUri();
+  if (!redirectUri) {
+    res.redirect(`${process.env.WEB_URL}/?view=integrations&error=slack_https`);
+    return;
+  }
   req.session.slackState = randomBytes(24).toString("hex");
-  const url = `https://slack.com/oauth/v2/authorize?${new URLSearchParams({ client_id: process.env.SLACK_CLIENT_ID, scope: "incoming-webhook", state: req.session.slackState, redirect_uri: `${process.env.API_URL}/api/integrations/slack/callback` })}`;
+  const url = `https://slack.com/oauth/v2/authorize?${new URLSearchParams({ client_id: process.env.SLACK_CLIENT_ID, scope: "incoming-webhook", state: req.session.slackState, redirect_uri: redirectUri })}`;
   req.session.save((error) =>
     res.redirect(
       error ? `${process.env.WEB_URL}/?view=integrations&error=slack` : url,

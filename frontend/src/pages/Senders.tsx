@@ -11,12 +11,10 @@ import type { Sender } from "../types";
 import { api } from "../services/api";
 export function Senders({
   senders,
-  preview,
   refresh,
   notify,
 }: {
   senders: Sender[];
-  preview: boolean;
   refresh: () => void;
   notify: (s: string) => void;
 }) {
@@ -32,7 +30,7 @@ export function Senders({
             Sending accounts{" "}
             <span className="count-pill">{senders.length}</span>
           </h2>
-          <p>A separate identity for every kind of conversation.</p>
+          <p>Manage your Ethereal sending accounts.</p>
         </div>
         <button className="secondary" onClick={() => setAdding(!adding)}>
           <Plus size={16} />
@@ -44,10 +42,6 @@ export function Senders({
           className="add-sender-form"
           onSubmit={async (e) => {
             e.preventDefault();
-            if (preview) {
-              notify("Sign in to create a real Ethereal sender.");
-              return;
-            }
             setBusy(true);
             setError("");
             try {
@@ -138,7 +132,7 @@ export function Senders({
           <div>
             <Mail size={28} />
           </div>
-          <h3>Your first sender starts here</h3>
+          <h3>No sending accounts</h3>
           <p>Create a test mailbox to start scheduling emails.</p>
           <button className="primary" onClick={() => setAdding(true)}>
             <Plus size={16} />

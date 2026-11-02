@@ -2,7 +2,7 @@
 
 Development API origin: `http://localhost:4000`; frontend requests use the Vite proxy. Production can serve the built frontend directly through Express. All endpoints below use JSON except OAuth redirects and the Bull Board web UI.
 
-Authenticated APIs require the HttpOnly `connect.sid` session cookie obtained through Google sign-in. Mutations require an Origin header matching WEB_URL, including when using Postman. Unauthenticated API requests return 401; invalid origin returns 403. There is no mock-login endpoint.
+Authenticated APIs require the HttpOnly `reachflow.sid` session cookie obtained through Google or email/password sign-in. Mutations require an Origin header matching WEB_URL and X-CSRF-Token from GET /api/me, including when using Postman. Unauthenticated API requests return 401; invalid origin returns 403. There is no mock-login endpoint.
 
 | Method | Path                             | Purpose                                                                                    |
 | ------ | -------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -31,6 +31,7 @@ Required headers:
 ```text
 Content-Type: application/json
 Origin: http://localhost:5173
+X-CSRF-Token: token-returned-by-api-me
 Idempotency-Key: a-unique-client-generated-uuid
 ```
 
@@ -90,3 +91,13 @@ Lists without a search query read PostgreSQL directly. Search indexing is eventu
 - `uncertain`: interrupted SMTP or ambiguous send result. Requires manual Ethereal review; never blindly retried.
 
 Validation errors return **400**, unknown/foreign resources **404**, idempotency conflicts **409**, search outages **503**, and unexpected errors **500** with a generic client message. Responses use `{ "error": "..." }`. OAuth failures redirect to the relevant UI with a safe error indicator.
+
+## Screenshot feature extensions
+
+- `POST /auth/register`: `{email,password,firstName?,lastName?}`; requires trusted Origin, password length 12–128, returns 201 and establishes a session.
+- `POST /auth/login`: `{email,password}`; requires trusted Origin, returns 200 and establishes a session. Fetch `/api/me` afterward for CSRF/profile data.
+- `POST /api/schedule` additionally accepts `bodyHtml` (sanitized, up to 150,000 characters) and `attachments: [{name,type,data}]` (base64, maximum 5 files and 5 MB total decoded bytes). A validated plaintext alternative is generated from HTML for SMTP/search. All content participates in the idempotency hash.
+- `GET /api/emails?view=starred|archived|trash` adds durable message folders. Existing scheduled/sent views omit archived/trash records.
+- `PATCH /api/emails/:id`: `{starred:boolean}` or `{action:"archive"|"delete"|"restore"}`. Requires ownership, Origin and CSRF. Archive/delete/restore reject pending sends with 409. Deletion moves completed mail to recoverable Trash.
+- `GET /api/emails/:id` includes sanitized `body_html`, message flags and attachment metadata (`id,name,content_type,size`).
+- `GET /api/emails/:id/attachments/:attachmentId` requires the owning session and downloads the file. `?inline=1` permits image previews only; responses include nosniff and sandbox CSP.

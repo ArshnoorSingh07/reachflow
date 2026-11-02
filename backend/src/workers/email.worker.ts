@@ -1,9 +1,10 @@
+import { mailMessage } from "../services/mail-message.service.js";
 import { classifyDeliveryFailure } from "../services/delivery-outcome.service.js";
 import { Worker, DelayedError } from "bullmq";
 import nodemailer from "nodemailer";
 import { db } from "../config/database.js";
 import { redis } from "../config/redis.js";
-import { emails, maintenance } from "../config/queues.js";
+import { emails, maintenance, queuePrefix } from "../config/queues.js";
 import { unseal } from "../utils/encryption.js";
 import { indexEmail } from "../services/search.service.js";
 import { enqueuePending } from "../services/queue.service.js";
@@ -94,13 +95,13 @@ const worker = new Worker(
           connectionTimeout: 10000,
           socketTimeout: 20000,
         });
-        const info = await transport.sendMail({
-          from: e.sender_email,
-          to: e.recipient,
-          subject: e.subject,
-          text: e.body,
-          messageId: `<${e.id}@reachflow.local>`,
-        });
+        const files = (
+          await db.query(
+            "SELECT name,content_type,content FROM attachments WHERE batch_id=$1",
+            [e.batch_id],
+          )
+        ).rows;
+        const info = await transport.sendMail(mailMessage(e, files));
         await db.query(
           "UPDATE emails SET status='sent',sent_at=now(),preview_url=$2,version=version+1 WHERE id=$1",
           [e.id, nodemailer.getTestMessageUrl(info) || null],
@@ -141,6 +142,7 @@ const worker = new Worker(
   },
   {
     connection: redis,
+    prefix: queuePrefix,
     concurrency: Number(process.env.WORKER_CONCURRENCY ?? 5),
   },
 );
@@ -184,16 +186,27 @@ const reconciler = new Worker(
       })(),
     ]);
   },
-  { connection: redis, concurrency: 1 },
+  { connection: redis, prefix: queuePrefix, concurrency: 1 },
 );
 reconciler.on("error", console.error);
+let stopping = false;
 async function shutdown() {
-  await Promise.all([worker.close(), reconciler.close()]);
-  await Promise.all([emails.close(), maintenance.close()]);
-  await db.end();
-  await redis.quit();
-  process.exit(0);
+  if (stopping) return;
+  stopping = true;
+  const deadline = setTimeout(() => process.exit(1), 30000);
+  deadline.unref();
+  try {
+    await Promise.all([worker.close(), reconciler.close()]);
+    await Promise.all([emails.close(), maintenance.close()]);
+    await Promise.all([db.end(), redis.quit()]);
+    clearTimeout(deadline);
+    process.exit(0);
+  } catch (error) {
+    console.error("Worker shutdown failed", error);
+    process.exit(1);
+  }
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+await Promise.all([worker.waitUntilReady(), reconciler.waitUntilReady()]);
 console.log("Email and reconciliation workers ready");

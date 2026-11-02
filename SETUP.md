@@ -21,14 +21,6 @@ npm run doctor
 
 PostgreSQL, Redis, and Elasticsearch run in Docker with persistent named volumes. Ports are bound to your local machine. The `infra:up` command waits for health checks. Elasticsearch may take a minute to become ready. OAuth credentials are deliberately blank until you add your own.
 
-If you only want to inspect the design:
-
-```sh
-npm run dev -w frontend
-```
-
-Open **http://localhost:5173** and select **Take a look around**. The sample workspace never schedules real messages. This mode is not the assignment’s Google login implementation.
-
 ## 3. Configure Google login
 
 1. Open [Google Cloud Console](https://console.cloud.google.com/). Choose/create a project.
@@ -61,12 +53,12 @@ Use `localhost` consistently. `127.0.0.1` is a different browser cookie host; mi
 
 1. Open [Slack app management](https://api.slack.com/apps) and create an app for a workspace where you can install apps.
 2. Enable **Incoming Webhooks**.
-3. In **OAuth & Permissions**, configure the redirect URL: `http://localhost:4000/api/integrations/slack/callback`. Add the bot scope **incoming-webhook**.
+3. Use an HTTPS app URL for Slack OAuth. In **OAuth & Permissions**, register `https://YOUR-APP-HOST/api/integrations/slack/callback` and add the bot scope **incoming-webhook**. The standard Slack web-app flow rejects the localhost HTTP callback.
 4. Copy Client ID and Client Secret from Basic Information into `.env` as SLACK_CLIENT_ID and SLACK_CLIENT_SECRET.
 5. Restart API and worker so environment changes are loaded. Open **Integrations → Connect Slack**.
 6. Complete the actual Slack consent and channel picker. The dashboard returns with Slack marked connected.
 
-Slack workspace policies may require admin approval. If your Slack app setup requires HTTPS, use a single HTTPS origin that reverse-proxies both the frontend and `/api`, `/auth`, `/queues` to this app, set both WEB_URL and API_URL to that origin, register matching HTTPS callbacks with both providers, and configure Vite to allow that development hostname. Start OAuth from that same origin so its session cookie is present on callback; do not tunnel only the callback while signing in on localhost.
+Slack workspace policies may require admin approval. Use one HTTPS origin that serves both the built frontend and backend routes. Set WEB_URL and API_URL to that origin for the HTTPS instance; register the Google JavaScript origin and `/auth/google/callback` URI for that host as well. Start Google sign-in and Connect Slack from that same HTTPS origin so its session cookie is present on callback. The ordinary localhost instance can remain separate for development. A temporary Cloudflare hostname changes when its tunnel is recreated, requiring updated provider callbacks. Keep a named tunnel or permanent HTTPS deployment for a stable callback URL.
 
 See [Slack’s OAuth authorization-code guide](https://docs.slack.dev/authentication/installing-with-oauth/). This app exchanges the code on the backend and stores the returned channel webhook encrypted in PostgreSQL. A handwritten webhook or a log line does not replace the OAuth/demo requirement.
 
@@ -122,3 +114,15 @@ Tests insert uniquely named fixtures and clean them up. Never point test configu
 | No messages are sent             | Confirm worker is running, inspect Bull Board, and check SMTP access / hourly counters.                 |
 | Needs review status              | SMTP outcome is uncertain; inspect Ethereal before manually rescheduling.                               |
 | Ports already in use             | Stop the old service or change env/Compose/proxy ports consistently.                                    |
+
+## Authentication upgrade
+
+Existing users must sign in again after the session upgrade. Run `npm run db -w backend` before starting the upgraded API. The account menu now supports signing out all devices; access checks reload account identity and revocation state on every request. See docs/AUTHENTICATION.md for details.
+
+## Screenshot feature setup
+
+Run `npm run db -w backend` to apply the additional password, rich-message, attachment and message-folder columns/tables, then restart with `npm run dev`. No new credentials are needed. Google OAuth still uses the existing configuration. For local email login, first choose **or sign up through email**, provide first/last names and a 12-character-or-longer password, then register. A local account is separate from the Google account, even with the same email address. DiceBear shows first/last initials; a one-word name uses one initial.
+
+### Reconnecting after a temporary tunnel stops
+
+The localhost app cannot reuse an expired tunnel callback. Start a new HTTPS instance/tunnel, add its exact Google and Slack callbacks in provider settings, then open that HTTPS URL, sign in and connect Slack in the workspace that owns the app. API_URL and WEB_URL must both match that host in the HTTPS process. The local app now detects HTTP OAuth configuration and explains the HTTPS requirement instead of redirecting into a failing Slack consent flow. A saved webhook remains usable on localhost after a successful connection, provided it belongs to the same user in the same database.

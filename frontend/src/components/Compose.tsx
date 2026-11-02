@@ -1,31 +1,28 @@
+import { RichTextEditor } from "./RichTextEditor";
 import { useCallback, useRef, useState } from "react";
 import {
-  Send,
   X,
   UploadCloud,
   Clock3,
   Loader2,
   FileText,
-  Check,
-  ArrowRight,
-  Users,
   Info,
-  Mail,
+  ArrowLeft,
+  Paperclip,
+  File,
 } from "lucide-react";
 import { api } from "../services/api";
-import type { AppConfig, Sender } from "../types";
+import type { AppConfig, Sender, AttachmentInput } from "../types";
 import { parseLeads } from "../utils/leads";
 import { useDialog } from "../hooks/useDialog";
 export function Compose({
   senders,
   config,
-  preview,
   close,
   done,
 }: {
   senders: Sender[];
   config: AppConfig;
-  preview: boolean;
   close: () => void;
   done: () => void;
 }) {
@@ -46,7 +43,13 @@ export function Compose({
     [delay, setDelay] = useState(config.minDelayMs / 1000),
     [limit, setLimit] = useState(config.maxHourlyLimit),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [scheduleOpen, setScheduleOpen] = useState(false),
+    [recipientInput, setRecipientInput] = useState("");
+  const [bodyHtml, setBodyHtml] = useState(""),
+    [attachments, setAttachments] = useState<AttachmentInput[]>([]),
+    [reading, setReading] = useState(false),
+    [scheduleDraft, setScheduleDraft] = useState(start);
   const key = useRef(crypto.randomUUID()),
     panel = useRef<HTMLDivElement>(null),
     dismiss = useCallback(close, [close]);
@@ -93,47 +96,164 @@ export function Compose({
       );
     }
   }
+  function addRecipient() {
+    if (!recipientInput.trim()) return;
+    const parsed = parseLeads(recipientInput);
+    if (!parsed.emails.length || parsed.ignored) {
+      setError(
+        "Enter valid email addresses, separated by commas or new lines.",
+      );
+      return;
+    }
+    const next = [...new Set([...recipients, ...parsed.emails])];
+    if (next.length > config.maxRecipients) {
+      setError(`A batch supports up to ${config.maxRecipients} recipients.`);
+      return;
+    }
+    setRecipients(next);
+    setRecipientInput("");
+    setError("");
+    key.current = crypto.randomUUID();
+  }
+  function toggleSchedule() {
+    setScheduleDraft(start);
+    setScheduleOpen(!scheduleOpen);
+  }
+  function tomorrow(hour: number) {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(hour, 0, 0, 0);
+    setScheduleDraft(
+      new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16),
+    );
+  }
+  async function attach(files: FileList | null) {
+    if (!files) return;
+    if (attachments.length + files.length > 5) {
+      setError("Attach up to 5 files.");
+      return;
+    }
+    const allowed = [
+      "image/png",
+      "image/jpeg",
+      "image/gif",
+      "image/webp",
+      "application/pdf",
+      "text/plain",
+      "text/csv",
+    ];
+    const size =
+      attachments.reduce(
+        (sum, f) => sum + Math.floor((f.data.length * 3) / 4),
+        0,
+      ) + Array.from(files).reduce((sum, f) => sum + f.size, 0);
+    if (size > 5 * 1024 * 1024) {
+      setError("Attachments must total 5 MB or less.");
+      return;
+    }
+    setReading(true);
+    setError("");
+    try {
+      const added = await Promise.all(
+        Array.from(files).map(async (file) => {
+          const type =
+            file.type ||
+            (/\.csv$/i.test(file.name)
+              ? "text/csv"
+              : /\.txt$/i.test(file.name)
+                ? "text/plain"
+                : "");
+          if (!allowed.includes(type))
+            throw Error("Use PNG, JPEG, GIF, WebP, PDF, CSV or text files.");
+          const data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(",")[1]);
+            reader.onerror = () => reject(Error("Could not read attachment."));
+            reader.readAsDataURL(file);
+          });
+          return { name: file.name, type, data };
+        }),
+      );
+      setAttachments((current) => [...current, ...added]);
+      key.current = crypto.randomUUID();
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setReading(false);
+    }
+  }
   return (
-    <div
-      className="overlay"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) close();
-      }}
-    >
+    <div className="overlay page-overlay">
       <div
-        className="compose"
+        className="compose compose-page"
         role="dialog"
         tabIndex={-1}
         aria-modal="true"
         aria-labelledby="compose-title"
         ref={panel}
       >
-        <div className="compose-head">
-          <span className="compose-symbol">
-            <Send size={20} />
-          </span>
-          <button
-            className="icon-button"
-            aria-label="Close compose"
-            disabled={busy}
-            onClick={close}
-          >
-            <X size={20} />
-          </button>
-          <div className="eyebrow">MAKE YOUR NEXT CONNECTION</div>
-          <h2 id="compose-title">A thoughtful hello starts here.</h2>
-          <p>Your message. Your audience. The perfect moment.</p>
+        <div className="editor-topbar flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              className="icon-button"
+              aria-label="Close compose"
+              disabled={busy}
+              onClick={close}
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <h2 id="compose-title">Compose New Email</h2>
+          </div>
+          <div className="editor-actions flex items-center gap-3">
+            <label className="attach-button" title="Attach files">
+              <Paperclip size={19} />
+              {attachments.length > 0 && <span>{attachments.length}</span>}
+              <input
+                type="file"
+                aria-label="Attach files"
+                multiple
+                accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.csv"
+                disabled={busy || reading}
+                onChange={(e) => {
+                  void attach(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            <button
+              className="icon-button schedule-toggle"
+              aria-label="Choose send time"
+              aria-expanded={scheduleOpen}
+              disabled={busy}
+              onClick={toggleSchedule}
+            >
+              <Clock3 size={19} />
+            </button>
+            <button
+              className="send-later-button"
+              aria-label="Schedule emails"
+              form="compose-form"
+              disabled={busy || reading || !senders.length}
+            >
+              {busy ? <Loader2 className="spin" size={14} /> : null}Schedule
+            </button>
+          </div>
         </div>
         <form
+          id="compose-form"
           onChange={() => {
             if (!busy) key.current = crypto.randomUUID();
           }}
           onSubmit={async (e) => {
             e.preventDefault();
-            if (preview) {
-              setError(
-                "You’re in a sample workspace. Sign in with Google to schedule real emails.",
-              );
+            if (!body.trim()) {
+              setError("Enter an email body.");
+              return;
+            }
+            if (body.length > 50000) {
+              setError("Keep the message under 50,000 characters.");
               return;
             }
             if (!recipients.length) {
@@ -142,7 +262,11 @@ export function Compose({
               );
               return;
             }
-            if (new Date(start).getTime() < Date.now() - 60000) {
+            if (
+              !start ||
+              !Number.isFinite(new Date(start).getTime()) ||
+              new Date(start).getTime() < Date.now() - 60000
+            ) {
               setError("Choose a start time in the future.");
               return;
             }
@@ -156,6 +280,8 @@ export function Compose({
                   senderId: sender,
                   subject,
                   body,
+                  bodyHtml,
+                  attachments,
                   recipients,
                   startAt: new Date(start).toISOString(),
                   delayMs: Math.round(delay * 1000),
@@ -170,17 +296,11 @@ export function Compose({
             }
           }}
         >
-          <fieldset disabled={busy} className="compose-fields">
-            <div className="form-section-title">
-              <span>01</span>
-              <div>
-                <h3>Choose your audience</h3>
-                <p>The people behind your next conversation.</p>
-              </div>
-            </div>
-            <label>
-              Send from
+          <fieldset disabled={busy} className="compose-fields editor-fields">
+            <div className="editor-line">
+              <label htmlFor="sender">From</label>
               <select
+                id="sender"
                 required
                 value={sender}
                 onChange={(e) => setSender(e.target.value)}
@@ -190,233 +310,264 @@ export function Compose({
                 </option>
                 {senders.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} · {s.email}
+                    {s.email}
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
             {!senders.length && (
               <div className="inline-info">
-                <Info size={16} />
-                <span>
-                  Add a test sender on the Sending accounts page first.
-                </span>
+                <Info size={15} />
+                Add a test sender on the Sending accounts page first.
               </div>
             )}
-            <div className="recipient-upload">
-              <span className="field-label">
-                Lead file<span>CSV or TXT · 2 MB max</span>
-              </span>
-              {fileName ? (
-                <div className="uploaded-file">
-                  <span className="file-icon">
-                    <FileText size={23} />
+            <div className="editor-line recipient-line">
+              <label htmlFor="recipient-input">To</label>
+              <div className="recipient-entry flex flex-wrap items-center gap-2">
+                {recipients.slice(0, 3).map((email) => (
+                  <span className="recipient-chip" key={email}>
+                    {email}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${email}`}
+                      onClick={() => {
+                        setRecipients(recipients.filter((r) => r !== email));
+                        key.current = crypto.randomUUID();
+                      }}
+                    >
+                      <X size={11} />
+                    </button>
                   </span>
-                  <div>
-                    <strong>{fileName}</strong>
-                    <small>
-                      <Check size={12} />
-                      {recipients.length.toLocaleString()} unique recipients
-                    </small>
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label="Remove lead file"
-                    onClick={resetLeads}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              ) : (
-                <label
-                  className={`upload ${dragging ? "dragging" : ""}`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragging(true);
+                ))}
+                {recipients.length > 3 && (
+                  <span className="recipient-chip">
+                    +{recipients.length - 3}
+                  </span>
+                )}
+                <input
+                  id="recipient-input"
+                  placeholder={
+                    recipients.length
+                      ? "Add recipient"
+                      : "recipient@example.com"
+                  }
+                  value={recipientInput}
+                  onChange={(e) => setRecipientInput(e.target.value)}
+                  onBlur={addRecipient}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      addRecipient();
+                    }
                   }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragging(false);
-                    if (e.dataTransfer.files[0])
-                      void upload(e.dataTransfer.files[0]);
+                />
+              </div>
+              <label
+                className={`upload-link ${dragging ? "dragging" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  if (e.dataTransfer.files[0])
+                    void upload(e.dataTransfer.files[0]);
+                }}
+              >
+                <UploadCloud size={15} />
+                Upload List
+                <input
+                  type="file"
+                  aria-label="Upload lead file"
+                  accept=".csv,.txt"
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) void upload(e.target.files[0]);
+                    e.target.value = "";
                   }}
+                />
+              </label>
+            </div>
+            {fileName && (
+              <div className="file-summary flex items-center gap-2">
+                <FileText size={14} />
+                <span>{fileName}</span>
+                <strong>
+                  {recipients.length.toLocaleString()} unique recipients
+                </strong>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Remove lead file"
+                  onClick={resetLeads}
                 >
-                  <span className="upload-symbol">
-                    <UploadCloud size={22} />
-                  </span>
-                  <strong>
-                    <span>Click to upload</span> or drag and drop
-                  </strong>
-                  <span>One email per line, or a CSV with an email column</span>
-                  <input
-                    type="file"
-                    aria-label="Upload lead file"
-                    accept=".csv,.txt"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) void upload(e.target.files[0]);
-                    }}
-                  />
-                </label>
-              )}
-              {fileName && (
-                <>
-                  <div className="lead-chips">
-                    {recipients.slice(0, 2).map((email) => (
-                      <span key={email}>{email}</span>
-                    ))}
-                    {recipients.length > 2 && (
-                      <span>+{recipients.length - 2} more</span>
-                    )}
-                  </div>
-                  <p className="file-notes">
+                  <X size={13} />
+                </button>
+                {(duplicates > 0 || ignored > 0) && (
+                  <small>
                     {duplicates > 0
                       ? `${duplicates} duplicate${duplicates === 1 ? "" : "s"} removed. `
                       : ""}
-                    {ignored > 0
-                      ? `${ignored} non-email field${ignored === 1 ? "" : "s"} ignored.`
-                      : ""}
-                  </p>
-                </>
-              )}
-            </div>
-            <div className="form-section-title">
-              <span>02</span>
-              <div>
-                <h3>Make it worth opening</h3>
-                <p>A good conversation begins with a good message.</p>
+                    {ignored > 0 ? `${ignored} non-email fields ignored.` : ""}
+                  </small>
+                )}
               </div>
-            </div>
-            <label>
-              Subject
+            )}
+            <div className="editor-line subject-line">
+              <label htmlFor="subject">Subject</label>
               <input
+                id="subject"
                 required
                 maxLength={200}
-                placeholder="A subject worth opening"
+                placeholder="Subject"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
               />
-            </label>
-            <label>
-              Message
-              <textarea
-                aria-label="Message"
-                required
-                maxLength={50000}
-                rows={7}
-                placeholder={
-                  "Hi there,\n\nI had an idea I thought you’d love…\n\nBest,\nYour name"
-                }
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-              />
-              <span className="input-caption">
-                Plain text keeps your message simple and personal.
-                <span>{body.length.toLocaleString()} / 50,000</span>
-              </span>
-            </label>
-            <div className="form-section-title">
-              <span>03</span>
-              <div>
-                <h3>Find the right moment</h3>
-                <p>Give each email a little breathing room.</p>
-              </div>
             </div>
-            <label>
-              Start sending
-              <input
-                type="datetime-local"
-                required
-                value={start}
-                onChange={(e) => setStart(e.target.value)}
-              />
-              <span className="input-caption">
-                Your timezone:{" "}
-                {Intl.DateTimeFormat().resolvedOptions().timeZone}
-              </span>
-            </label>
-            <div className="field-pair">
+            <div className="editor-limits flex flex-wrap items-center gap-5">
               <label>
-                Delay between emails
-                <div className="unit-input">
-                  <input
-                    required
-                    type="number"
-                    step="0.1"
-                    min={config.minDelayMs / 1000}
-                    max={3600}
-                    value={delay}
-                    onChange={(e) => setDelay(Number(e.target.value))}
-                  />
-                  <span>seconds</span>
-                </div>
-                <span className="input-caption">
-                  Minimum {config.minDelayMs / 1000}s between sends
-                </span>
+                Delay between emails{" "}
+                <input
+                  required
+                  aria-label="Delay between emails"
+                  type="number"
+                  step="0.1"
+                  min={config.minDelayMs / 1000}
+                  max={3600}
+                  value={delay}
+                  onChange={(e) => setDelay(Number(e.target.value))}
+                />
+                <span>sec</span>
               </label>
               <label>
-                Hourly limit
-                <div className="unit-input">
-                  <input
-                    required
-                    type="number"
-                    min={1}
-                    max={config.maxHourlyLimit}
-                    value={limit}
-                    onChange={(e) => setLimit(Number(e.target.value))}
-                  />
-                  <span>/ sender</span>
-                </div>
-                <span className="input-caption">
-                  Up to {config.maxHourlyLimit.toLocaleString()} per hour
-                </span>
+                Hourly limit{" "}
+                <input
+                  aria-label="Hourly limit"
+                  required
+                  type="number"
+                  min={1}
+                  max={config.maxHourlyLimit}
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                />
               </label>
             </div>
-            <div className="schedule-summary">
-              <span>
-                <Clock3 size={17} />
-                <strong>Your sending plan</strong>
-              </span>
-              <p>
-                <strong>{recipients.length.toLocaleString()} emails</strong> ·{" "}
-                {delay}s apart · up to {limit}/hour
-              </p>
-              <small>
-                Limits are shared across this sender’s campaigns. Emails over
-                the limit wait for the next hour.
-              </small>
+            <RichTextEditor
+              disabled={busy}
+              onChange={(text, html) => {
+                setBody(text);
+                setBodyHtml(html);
+                key.current = crypto.randomUUID();
+              }}
+            />
+            <div className="attachments-grid">
+              {attachments.map((file, index) => (
+                <div className="attachment-card" key={index}>
+                  {file.type.startsWith("image/") ? (
+                    <img
+                      src={`data:${file.type};base64,${file.data}`}
+                      alt={file.name}
+                    />
+                  ) : (
+                    <div className="attachment-icon">
+                      <File size={30} />
+                    </div>
+                  )}
+                  <strong>{file.name}</strong>
+                  <small>
+                    {((file.data.length * 3) / 4 / 1024).toFixed(1)} KB
+                  </small>
+                  <button
+                    type="button"
+                    aria-label={`Remove attachment ${file.name}`}
+                    onClick={() => {
+                      setAttachments(attachments.filter((_, i) => i !== index));
+                      key.current = crypto.randomUUID();
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
             </div>
+            {reading && <p role="status">Reading attachments…</p>}
             {error && (
               <div className="form-error" role="alert">
                 {error}
               </div>
             )}
+            <div className="editor-plan flex flex-wrap items-center justify-between gap-3">
+              <span>{recipients.length.toLocaleString()} recipients</span>
+              <label className="start-time-field">
+                Start time
+                <input
+                  aria-label="Start sending"
+                  type="datetime-local"
+                  required
+                  value={start}
+                  onChange={(e) => {
+                    setStart(e.target.value);
+                    key.current = crypto.randomUUID();
+                  }}
+                />
+                <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+              </label>
+            </div>
           </fieldset>
-          <div className="compose-foot">
-            <span>
-              <Users size={15} />
-              {recipients.length.toLocaleString()} recipients
-            </span>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={close}
-            >
-              Cancel
-            </button>
-            <button className="primary" disabled={busy || !senders.length}>
-              {busy ? (
-                <Loader2 className="spin" size={16} />
-              ) : (
-                <Clock3 size={16} />
-              )}
-              Schedule emails
-              <ArrowRight size={15} />
-            </button>
-          </div>
         </form>
+        {scheduleOpen && (
+          <div
+            className="schedule-popover"
+            role="region"
+            aria-label="Send later options"
+          >
+            <h3>Send Later</h3>
+            <label>
+              Pick date & time
+              <input
+                aria-label="Send later date and time"
+                type="datetime-local"
+                required
+                value={scheduleDraft}
+                disabled={busy}
+                onChange={(e) => {
+                  setScheduleDraft(e.target.value);
+                }}
+              />
+            </label>
+            <span className="schedule-timezone">
+              {Intl.DateTimeFormat().resolvedOptions().timeZone}
+            </span>
+            <div className="schedule-presets">
+              {[9, 10, 11, 15].map((hour) => (
+                <button type="button" key={hour} onClick={() => tomorrow(hour)}>
+                  Tomorrow, {hour > 12 ? hour - 12 : hour}:00{" "}
+                  {hour >= 12 ? "PM" : "AM"}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                className="plain-button"
+                onClick={() => setScheduleOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="send-later-button"
+                disabled={!scheduleDraft}
+                onClick={() => {
+                  setStart(scheduleDraft);
+                  key.current = crypto.randomUUID();
+                  setScheduleOpen(false);
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

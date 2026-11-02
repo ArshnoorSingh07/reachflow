@@ -7,7 +7,7 @@ export function StatusBadge({ status }: { status: EmailStatus }) {
         {
           scheduled: "Scheduled",
           sending: "Sending",
-          sent: "Delivered",
+          sent: "Sent",
           failed: "Failed",
           uncertain: "Needs review",
         }[status]

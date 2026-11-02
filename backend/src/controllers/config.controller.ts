@@ -1,3 +1,4 @@
+import { slackRedirectUri } from "../services/slack-config.service.js";
 import type { RequestHandler } from "express";
 import { env } from "../config/env.js";
 export const getConfig: RequestHandler = (_req, res) => {
@@ -8,6 +9,7 @@ export const getConfig: RequestHandler = (_req, res) => {
     googleConfigured: !!(
       process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
     ),
+    slackOAuthReady: !!slackRedirectUri(),
     slackConfigured: !!(
       process.env.SLACK_CLIENT_ID && process.env.SLACK_CLIENT_SECRET
     ),

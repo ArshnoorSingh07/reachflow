@@ -1,3 +1,4 @@
+import { emailIndex } from "../config/search.js";
 import { listEmailRecords } from "../models/email.model.js";
 import { BatchModel } from "../models/batch.model.js";
 import { enqueuePending } from "./queue.service.js";
@@ -18,28 +19,31 @@ export const EmailService = {
   ) {
     let ids: string[] | null = null;
     if (query) {
-      const r = await fetch(`${process.env.ELASTIC_URL}/emails/_search`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          size: 10000,
-          query: {
-            bool: {
-              filter: [{ term: { "user_id.keyword": uid } }],
-              must: [
-                {
-                  multi_match: {
-                    query,
-                    fields: ["recipient^2", "subject^2", "body"],
-                    type: "phrase_prefix",
+      const r = await fetch(
+        `${process.env.ELASTIC_URL}/${emailIndex}/_search`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            size: 10000,
+            query: {
+              bool: {
+                filter: [{ term: { "user_id.keyword": uid } }],
+                must: [
+                  {
+                    multi_match: {
+                      query,
+                      fields: ["recipient^2", "subject^2", "body"],
+                      type: "phrase_prefix",
+                    },
                   },
-                },
-              ],
+                ],
+              },
             },
-          },
-        }),
-        signal: AbortSignal.timeout(5000),
-      });
+          }),
+          signal: AbortSignal.timeout(5000),
+        },
+      );
       if (r.status === 404) return { rows: [], total: 0, page };
       if (!r.ok) {
         throw Object.assign(new Error("Search is temporarily unavailable"), {

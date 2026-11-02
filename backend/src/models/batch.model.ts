@@ -1,3 +1,4 @@
+import { decodeAttachment } from "../services/message-content.service.js";
 import { db } from "../config/database.js";
 import { randomUUID, createHash } from "node:crypto";
 import type { ScheduleInput } from "../validators/email.validator.js";
@@ -45,9 +46,9 @@ export const BatchModel = {
             status: 400,
           });
         await client.query(
-          `INSERT INTO emails(id,user_id,batch_id,sender_id,recipient,subject,body,scheduled_at,delay_ms,hourly_limit)
+          `INSERT INTO emails(id,user_id,batch_id,sender_id,recipient,subject,body,scheduled_at,delay_ms,hourly_limit,body_html)
           SELECT gen_random_uuid(),$1,$2::uuid,$3::uuid,recipient,$5,$6,
-          $7::timestamptz + ((ordinality-1)*$8::int)*interval '1 millisecond',$8,$9
+          $7::timestamptz + ((ordinality-1)*$8::int)*interval '1 millisecond',$8,$9,$10
           FROM unnest($4::text[]) WITH ORDINALITY AS leads(recipient,ordinality)`,
           [
             uid,
@@ -59,8 +60,14 @@ export const BatchModel = {
             data.startAt,
             data.delayMs,
             data.hourlyLimit,
+            data.bodyHtml ?? null,
           ],
         );
+        for (const file of data.attachments ?? [])
+          await client.query(
+            "INSERT INTO attachments(batch_id,name,content_type,content) VALUES($1,$2,$3,$4)",
+            [batchId, file.name, file.type, decodeAttachment(file)],
+          );
       }
       await client.query("COMMIT");
     } catch (e) {

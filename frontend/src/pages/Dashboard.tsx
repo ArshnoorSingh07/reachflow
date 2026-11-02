@@ -1,26 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
+import { WorkspaceHeader } from "../components/WorkspaceHeader";
+import { useCallback, useEffect, useState, lazy, Suspense } from "react";
 import {
   Send,
   Clock3,
   Users,
   Plug,
   Plus,
-  ChevronDown,
-  LogOut,
   ArrowUpRight,
-  Zap,
-  Layers3,
   Check,
   AlertCircle,
   Loader2,
   X,
-  ArrowRight,
-  ShieldCheck,
+  Star,
+  Archive,
+  Trash2,
 } from "lucide-react";
 import { api } from "../services/api";
 import type { User, View, Email } from "../types";
 import { useWorkspace } from "../hooks/useWorkspace";
-import { Compose } from "../components/Compose";
+const Compose = lazy(() =>
+  import("../components/Compose").then((module) => ({
+    default: module.Compose,
+  })),
+);
 import { EmailDetail } from "../components/EmailDetail";
 import { EmailTable } from "../components/EmailTable";
 import { Senders } from "./Senders";
@@ -31,12 +33,18 @@ const labels: Record<View, string> = {
   sent: "Sent emails",
   senders: "Sending accounts",
   integrations: "Integrations",
+  starred: "Starred",
+  archived: "Archived",
+  trash: "Trash",
 };
 const icons = {
   scheduled: Clock3,
   sent: Send,
   senders: Users,
   integrations: Plug,
+  starred: Star,
+  archived: Archive,
+  trash: Trash2,
 };
 function initialView(): View {
   const v = new URLSearchParams(location.search).get("view");
@@ -45,7 +53,6 @@ function initialView(): View {
 export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null),
     [authLoading, setAuthLoading] = useState(true),
-    [preview, setPreview] = useState(false),
     [view, setView] = useState<View>(initialView),
     [page, setPage] = useState(1),
     [query, setQuery] = useState(""),
@@ -53,12 +60,26 @@ export default function Dashboard() {
     [status, setStatus] = useState(""),
     [composing, setComposing] = useState(false),
     [selected, setSelected] = useState<Email | null>(null),
-    [toast, setToast] = useState(""),
-    [loggingOut, setLoggingOut] = useState(false);
-  const expired = useCallback(() => setUser(null), []);
+    [toast, setToast] = useState("");
+  const expired = useCallback(() => {
+    setUser(null);
+    setComposing(false);
+    setSelected(null);
+  }, []);
+  useEffect(() => {
+    window.addEventListener("reachflow:unauthorized", expired);
+    return () => window.removeEventListener("reachflow:unauthorized", expired);
+  }, [expired]);
+  useEffect(() => {
+    if (!("BroadcastChannel" in window)) return;
+    const channel = new BroadcastChannel("reachflow-auth");
+    channel.onmessage = (event) => {
+      if (event.data === "signed-out") expired();
+    };
+    return () => channel.close();
+  }, [expired]);
   const workspace = useWorkspace(
     user,
-    preview,
     view,
     page,
     query,
@@ -73,6 +94,10 @@ export default function Dashboard() {
     if (params.get("error") === "slack")
       setToast(
         "Slack connection was not completed. Check your app settings and try again.",
+      );
+    if (params.get("error") === "slack_https")
+      setToast(
+        "Slack connection requires HTTPS. Open the HTTPS app URL and retry.",
       );
     if (params.get("connected") === "slack")
       setToast("Slack connected. Hourly-limit alerts are now enabled.");
@@ -112,55 +137,38 @@ export default function Dashboard() {
     const oauthError = new URLSearchParams(location.search).get("error");
     return (
       <Login
-        error={
-          oauthError === "oauth"
-            ? "Sign-in could not be completed. Check the OAuth configuration and try again."
-            : ""
-        }
-        preview={() => {
-          setPreview(true);
-          setUser({
-            name: "Alex Morgan",
-            email: "alex@example.com",
-            avatar: "",
-          });
+        onAuthenticated={async () => {
+          const result = await api<{ user: User }>("/api/me");
+          setUser(result.user);
+          change("scheduled");
         }}
+        googleConfigured={workspace.config.googleConfigured}
+        error={
+          oauthError === "not_configured"
+            ? "Google sign-in is not configured yet. Contact your workspace administrator."
+            : oauthError === "oauth"
+              ? "Sign-in could not be completed. Check the OAuth configuration and try again."
+              : ""
+        }
       />
     );
   }
-  const title = {
-    scheduled: "Every email. Right on time.",
-    sent: "Connections, delivered.",
-    senders: "The people behind your sends.",
-    integrations: "Better, together.",
-  }[view];
-  const subtitle = {
-    scheduled: "Plan your outreach and let us take care of the timing.",
-    sent: "A clear view of every message that left your workspace.",
-    senders: "Give every conversation a familiar name and a trusted sender.",
-    integrations: "Your favorite tools, connected to your outreach flow.",
-  }[view];
   return (
-    <div className="app">
-      <aside className="sidebar">
+    <div className="app min-h-screen bg-white">
+      <aside className="sidebar" inert={composing || !!selected}>
         <a className="brand" href="/" aria-label="Reachflow home">
-          <span className="logo">
-            <Send size={21} />
-          </span>
-          <span>
-            reachflow<span className="brand-dot">.</span>
-          </span>
+          <span className="wordmark">REACHFLOW</span>
         </a>
-        <div className="workspace">
-          <div className="workspace-icon">{user.name[0]}</div>
-          <div>
-            <strong>My workspace</strong>
-            <small>Personal workspace</small>
-          </div>
-          <ChevronDown size={14} />
-        </div>
-        <div className="nav-label">WORKSPACE</div>
-        <nav>
+        <button
+          className="sidebar-compose"
+          aria-label="Compose New Email"
+          onClick={() => setComposing(true)}
+        >
+          <Plus size={15} />
+          <span>Compose</span>
+        </button>
+        <div className="nav-label">CORE</div>
+        <nav aria-label="Workspace navigation">
           {(Object.keys(labels) as View[]).map((v) => {
             const Icon = icons[v];
             return (
@@ -172,129 +180,58 @@ export default function Dashboard() {
                 className={`nav-item ${view === v ? "active" : ""}`}
                 onClick={() => change(v)}
               >
-                <Icon size={18} />
-                <span className="nav-text">{labels[v]}</span>
-                {v === "scheduled" && (
-                  <span className="nav-count">{workspace.stats.scheduled}</span>
+                <Icon size={16} />
+                <span className="nav-text">
+                  {v === "scheduled"
+                    ? "Scheduled"
+                    : v === "sent"
+                      ? "Sent"
+                      : labels[v]}
+                </span>
+                {(v === "scheduled" || v === "sent") && (
+                  <span className="nav-count">{workspace.stats[v]}</span>
                 )}
-                {v === "integrations" && <span className="new-dot" />}
               </button>
             );
           })}
         </nav>
         <div className="sidebar-bottom">
-          <div className="tip">
-            <span className="tip-icon">
-              <Zap size={19} />
-            </span>
-            <strong>
-              A little planning.
-              <br />A lot more possibility.
-            </strong>
-            <p>Make room for the conversations that matter.</p>
-            <button
+          {user.isAdmin && (
+            <a
               className="queue-link"
-              onClick={() => {
-                if (preview || !user.isAdmin) {
-                  setToast(
-                    "Queue controls are available to workspace operators listed in ADMIN_EMAILS.",
-                  );
-                  return;
-                }
-                window.open("/queues", "_blank", "noopener,noreferrer");
-              }}
+              href="/queues"
+              target="_blank"
+              rel="noreferrer"
             >
-              Queue dashboard
-              <ArrowUpRight size={13} />
-            </button>
-          </div>
-          <div className="sidebar-foot">
-            <span className="dot" />
-            {preview ? "Sample workspace" : "Your email workspace"}
-            <span>v1.0</span>
-          </div>
+              Queue dashboard <ArrowUpRight size={13} />
+            </a>
+          )}
         </div>
       </aside>
       <div className="main">
-        <header>
-          <div className="breadcrumb">
-            Workspace<span>/</span>
-            <strong>{labels[view]}</strong>
-          </div>
-          <div className="header-right">
-            {preview && <span className="preview-tag">Preview mode</span>}
-            <span className="header-divider" />
-            <div className="user-info">
-              <strong>{user.name}</strong>
-              <small>{user.email}</small>
-            </div>
-            {user.avatar ? (
-              <img className="avatar" src={user.avatar} alt="Your profile" />
-            ) : (
-              <div className="avatar">
-                {user.name
-                  .split(" ")
-                  .map((x) => x[0])
-                  .slice(0, 2)
-                  .join("")}
-              </div>
-            )}
-            <button
-              className="icon-button"
-              aria-label="Log out"
-              disabled={loggingOut}
-              onClick={async () => {
-                setLoggingOut(true);
-                try {
-                  if (!preview) await api("/api/logout", { method: "POST" });
-                  setUser(null);
-                  setPreview(false);
-                  change("scheduled");
-                } catch (e) {
-                  setToast((e as Error).message);
-                } finally {
-                  setLoggingOut(false);
+        <div inert={composing || !!selected}>
+          <WorkspaceHeader
+            user={user}
+            title={labels[view]}
+            onLogout={async (all) => {
+              try {
+                await api(all ? "/api/logout-all" : "/api/logout", {
+                  method: "POST",
+                });
+                if ("BroadcastChannel" in window) {
+                  const channel = new BroadcastChannel("reachflow-auth");
+                  channel.postMessage("signed-out");
+                  channel.close();
                 }
-              }}
-            >
-              {loggingOut ? (
-                <Loader2 size={17} className="spin" />
-              ) : (
-                <LogOut size={17} />
-              )}
-            </button>
-          </div>
-        </header>
+                expired();
+                change("scheduled");
+              } catch (error) {
+                setToast((error as Error).message);
+              }
+            }}
+          />
+        </div>
         <main className="content" inert={composing || !!selected}>
-          <div className="page-heading">
-            <div>
-              <div className="eyebrow">
-                <span className="tiny-line" />
-                YOUR OUTREACH, IN FLOW
-              </div>
-              <h1>{title}</h1>
-              <p>{subtitle}</p>
-            </div>
-            <button
-              className="primary compose-button"
-              onClick={() => setComposing(true)}
-            >
-              <Plus size={17} />
-              Compose new email
-            </button>
-          </div>
-          {preview && (
-            <div className="preview-banner">
-              <span>
-                <Layers3 size={15} />
-                You’re exploring a sample workspace. No emails will be sent.
-              </span>
-              <a href="/auth/google">
-                Start your workspace
-                <ArrowRight size={14} />
-              </a>
-            </div>
-          )}
           {workspace.metadataError && (
             <div className="metadata-error" role="alert">
               <AlertCircle size={16} />
@@ -302,56 +239,9 @@ export default function Dashboard() {
               <button onClick={workspace.refresh}>Try again</button>
             </div>
           )}
-          <div className="stats-grid">
-            {[
-              {
-                label: "Scheduled emails",
-                value: workspace.stats.scheduled,
-                icon: Clock3,
-                note: "Ready for their moment",
-                color: "purple",
-              },
-              {
-                label: "Emails delivered",
-                value: workspace.stats.sent,
-                icon: Send,
-                note: `${workspace.stats.sentToday} delivered today`,
-                color: "green",
-              },
-              {
-                label: "Needs attention",
-                value: workspace.stats.failed,
-                icon: AlertCircle,
-                note: "Failed or uncertain deliveries",
-                color: "orange",
-              },
-            ].map((s) => (
-              <div className="stat-card" key={s.label}>
-                <div className="stat-top">
-                  <span>{s.label}</span>
-                  <span className={`stat-icon ${s.color}`}>
-                    <s.icon size={18} />
-                  </span>
-                </div>
-                <strong className="stat-number">
-                  {Number(s.value).toLocaleString()}
-                </strong>
-                <div className="stat-note">
-                  <span className={`stat-note-dot ${s.color}`} />
-                  {s.note}
-                </div>
-                <s.icon
-                  className={`stat-watermark ${s.color}`}
-                  size={65}
-                  aria-hidden="true"
-                />
-              </div>
-            ))}
-          </div>
-          {view === "scheduled" || view === "sent" ? (
+          {!["senders", "integrations"].includes(view) ? (
             <EmailTable
               view={view}
-              stats={workspace.stats}
               rows={workspace.rows}
               total={workspace.total}
               page={page}
@@ -361,8 +251,6 @@ export default function Dashboard() {
               senders={workspace.senders}
               loading={workspace.loading}
               error={workspace.error}
-              preview={preview}
-              change={change}
               setQuery={setFilter(setQuery)}
               setSender={setFilter(setSender)}
               setStatus={setFilter(setStatus)}
@@ -370,70 +258,72 @@ export default function Dashboard() {
               refresh={workspace.refresh}
               compose={() => setComposing(true)}
               select={setSelected}
-            />
-          ) : view === "senders" ? (
-            <Senders
-              senders={workspace.senders}
-              preview={preview}
-              refresh={workspace.refresh}
-              notify={setToast}
+              toggleStar={async (email) => {
+                try {
+                  await api(`/api/emails/${email.id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ starred: !email.starred }),
+                  });
+                  workspace.refresh();
+                } catch (error) {
+                  setToast((error as Error).message);
+                }
+              }}
             />
           ) : (
-            <Integrations
-              user={user}
-              slack={workspace.slack}
-              config={workspace.config}
-              preview={preview}
-              changed={workspace.refresh}
-              notify={setToast}
-            />
-          )}
-          <div className="below-panel">
-            <span>
-              <ShieldCheck size={14} />
-              {preview
-                ? "Sample data for design preview"
-                : "Persistent scheduling. Thoughtful delivery."}
-            </span>
-            <span>
-              Times shown in {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            </span>
-          </div>
-          <div className="bottom-note">
-            <span className="note-icon">
-              <Zap size={18} />
-            </span>
-            <div>
-              <strong>Set it. Send it. Stay in your flow.</strong>
-              <p>Your emails wait for their moment, even when you’re away.</p>
+            <div className="settings-content">
+              {view === "senders" ? (
+                <Senders
+                  senders={workspace.senders}
+                  refresh={workspace.refresh}
+                  notify={setToast}
+                />
+              ) : (
+                <Integrations
+                  slack={workspace.slack}
+                  config={workspace.config}
+                  changed={workspace.refresh}
+                  notify={setToast}
+                />
+              )}
             </div>
-            <span className="note-decoration">↗</span>
-          </div>
+          )}
         </main>
-        <footer>
-          Made for meaningful connections.
-          <span>Reachflow © {new Date().getFullYear()}</span>
-        </footer>
       </div>
       {composing && (
-        <Compose
-          senders={workspace.senders}
-          config={workspace.config}
-          preview={preview}
-          close={closeCompose}
-          done={() => {
-            setComposing(false);
-            workspace.refresh();
-            setToast("Emails scheduled. Your outreach is in motion.");
-          }}
-        />
+        <Suspense
+          fallback={
+            <div className="overlay splash">
+              <Loader2 className="spin" />
+              Opening composer…
+            </div>
+          }
+        >
+          <Compose
+            senders={workspace.senders}
+            config={workspace.config}
+            close={closeCompose}
+            done={() => {
+              setComposing(false);
+              change("scheduled");
+              workspace.refresh();
+              setToast("Emails scheduled successfully.");
+            }}
+          />
+        </Suspense>
       )}
       {selected && (
-        <EmailDetail email={selected} preview={preview} close={closeDetail} />
+        <EmailDetail
+          email={selected}
+          user={user}
+          close={closeDetail}
+          changed={workspace.refresh}
+          notify={setToast}
+        />
       )}
       {toast && (
         <div className="toast" role="status">
-          <Check size={18} />
+          <Check size={17} />
           {toast}
           <button
             className="icon-button"

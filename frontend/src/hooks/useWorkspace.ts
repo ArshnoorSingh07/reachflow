@@ -1,15 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../services/api";
 import type { AppConfig, EmailPage, Sender, Stats, User, View } from "../types";
-import {
-  defaultConfig,
-  previewEmails,
-  previewSenders,
-  previewStats,
-} from "../utils/preview";
+import { defaultConfig } from "../config";
 export function useWorkspace(
   user: User | null,
-  preview: boolean,
   view: View,
   page: number,
   query: string,
@@ -34,8 +28,7 @@ export function useWorkspace(
     [loading, setLoading] = useState(false),
     [error, setError] = useState(""),
     [metadataError, setMetadataError] = useState(""),
-    [revision, setRevision] = useState(0),
-    [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+    [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((x) => x + 1), []);
   useEffect(() => {
     api<AppConfig>("/api/config")
@@ -43,10 +36,13 @@ export function useWorkspace(
       .catch(() => {});
   }, []);
   useEffect(() => {
-    if (!user) return;
-    if (preview) {
-      setSenders(previewSenders);
-      setStats(previewStats);
+    if (!user) {
+      setEmails({ rows: [], total: 0, page: 1 });
+      setSenders([]);
+      setStats({ scheduled: 0, sent: 0, failed: 0, sentToday: 0 });
+      setSlack(false);
+      setError("");
+      setMetadataError("");
       return;
     }
     let active = true;
@@ -72,27 +68,13 @@ export function useWorkspace(
     return () => {
       active = false;
     };
-  }, [user, preview, revision]);
+  }, [user, revision]);
   useEffect(() => {
-    if (!user || !["scheduled", "sent"].includes(view)) return;
-    if (preview) {
-      const filtered = previewEmails(view === "sent").filter(
-        (x) =>
-          (!sender || x.sender_id === sender) &&
-          (!status || x.status === status) &&
-          (x.recipient + " " + x.subject)
-            .toLowerCase()
-            .includes(query.toLowerCase()),
-      );
-      setEmails({
-        rows: filtered.slice((page - 1) * 12, page * 12),
-        total: filtered.length,
-        page,
-      });
-      setLoading(false);
-      setError("");
+    if (
+      !user ||
+      !["scheduled", "sent", "starred", "archived", "trash"].includes(view)
+    )
       return;
-    }
     const controller = new AbortController();
     setLoading(true);
     const timer = setTimeout(() => {
@@ -103,7 +85,6 @@ export function useWorkspace(
         .then((data) => {
           setEmails(data);
           setError("");
-          setUpdatedAt(new Date());
         })
         .catch((e) => {
           if (e.name !== "AbortError") {
@@ -120,25 +101,23 @@ export function useWorkspace(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [user, preview, view, page, query, sender, status, revision]);
+  }, [user, view, page, query, sender, status, revision]);
   useEffect(() => {
-    if (!user || preview) return;
+    if (!user) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") refresh();
     }, 10000);
     return () => clearInterval(timer);
-  }, [user, preview, refresh]);
+  }, [user, refresh]);
   return {
     ...emails,
     senders,
     stats,
     slack,
-    setSlack,
     config,
     loading,
     error,
     metadataError,
     refresh,
-    updatedAt,
   };
 }

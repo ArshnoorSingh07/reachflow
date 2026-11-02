@@ -4,6 +4,7 @@ export type Identity = {
   email: string;
   name: string;
   avatar: string;
+  provider?: "google" | "password";
 };
 export const UserModel = {
   async upsertGoogleUser(user: Identity) {
@@ -32,3 +33,23 @@ export const UserModel = {
     ]);
   },
 };
+export async function findAccount(id: string) {
+  return (
+    await db.query<
+      Identity & {
+        session_version: number;
+        disabled_at: Date | null;
+        auth_provider: string;
+      }
+    >(
+      "SELECT id,email,name,avatar,session_version,disabled_at,auth_provider FROM users WHERE id=$1",
+      [id],
+    )
+  ).rows[0];
+}
+export async function revokeSessions(id: string) {
+  await db.query(
+    "UPDATE users SET session_version=session_version+1 WHERE id=$1",
+    [id],
+  );
+}

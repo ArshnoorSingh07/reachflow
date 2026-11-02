@@ -7,14 +7,15 @@
     "backend"
   ],
   "scripts": {
-    "dev": "concurrently -n backend,worker,frontend \"npm run dev -w backend\" \"npm run worker -w backend\" \"npm run dev -w frontend\"",
+    "dev": "concurrently --kill-others-on-fail -n backend,worker,frontend \"npm run dev -w backend\" \"npm run worker -w backend\" \"npm run dev -w frontend\"",
     "build": "npm run build --workspaces",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:ui": "vitest run",
     "test:all": "npm test && npm run test:ui",
     "infra:up": "docker compose up -d --wait",
     "setup": "npm run setup -w backend",
-    "doctor": "npm run doctor -w backend"
+    "doctor": "npm run doctor -w backend",
+    "test:live": "node --env-file=.env --import tsx tests/verify-live.ts"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
@@ -27,6 +28,7 @@
     "supertest": "^7.3.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "cookie-signature": "^1.2.2"
   }
 }

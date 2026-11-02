@@ -2,14 +2,22 @@ import { app, sessionClient } from "./app.js";
 import { db } from "./config/database.js";
 import { redis } from "./config/redis.js";
 import { emails, maintenance } from "./config/queues.js";
-const server = app.listen(Number(process.env.PORT ?? 4000), () =>
-  console.log("API listening on :" + (process.env.PORT ?? 4000)),
-);
+const port = Number(process.env.PORT ?? 4000);
+const server = app.listen(port);
+server.once("listening", () => console.log("API listening on :" + port));
+server.on("error", (error: NodeJS.ErrnoException) => {
+  console.error(
+    error.code === "EADDRINUSE"
+      ? `API port ${port} is already in use. Stop the other dev session and run npm run dev again.`
+      : error.message,
+  );
+  process.exit(1);
+});
 let stopping = false;
 function shutdown() {
   if (stopping) return;
   stopping = true;
-  
+
   const deadline = setTimeout(() => process.exit(1), 30000);
   deadline.unref();
   server.close(async () => {

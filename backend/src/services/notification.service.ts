@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { db } from "../config/database.js";
 import { redis } from "../config/redis.js";
 import { unseal } from "../utils/encryption.js";
@@ -8,9 +9,18 @@ export async function notify(eventId?: string) {
   );
   for (const n of rows) {
     const lock = `notification-lock:${n.id}`;
-    if (!(await redis.set(lock, "1", "PX", 15000, "NX"))) continue;
+    const token = randomUUID();
+    if (!(await redis.set(lock, token, "PX", 15000, "NX"))) continue;
     try {
-      const r = await fetch(unseal(n.slack_webhook), {
+      // Another notifier may have finished after this batch snapshot was read.
+      const fresh = (
+        await db.query(
+          "SELECT n.id,u.slack_webhook FROM notifications n JOIN users u ON u.id=n.user_id WHERE n.id=$1 AND n.sent_at IS NULL AND u.slack_webhook IS NOT NULL",
+          [n.id],
+        )
+      ).rows[0];
+      if (!fresh) continue;
+      const r = await fetch(unseal(fresh.slack_webhook), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -25,7 +35,12 @@ export async function notify(eventId?: string) {
     } catch (e) {
       console.error(e);
     } finally {
-      await redis.del(lock);
+      await redis.eval(
+        "if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0",
+        1,
+        lock,
+        token,
+      );
     }
   }
 }

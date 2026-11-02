@@ -1,3 +1,6 @@
+import { rateLimit } from "./middleware/rate-limit.middleware.js";
+import { createSessionAuthentication } from "./middleware/session.middleware.js";
+import { findAccount } from "./models/user.model.js";
 import { fileURLToPath } from "node:url";
 import { getConfig } from "./controllers/config.controller.js";
 import express from "express";
@@ -24,12 +27,17 @@ app.use((_req, res, next) => {
   });
   next();
 });
-app.set("trust proxy", 1);
-app.use(express.json({ limit: "2mb" }));
+app.set("trust proxy", process.env.NODE_ENV === "production" ? 1 : false);
+app.use(express.json({ limit: "12mb" }));
 const store = createClient({ url: process.env.REDIS_URL });
+store.on("error", (error) =>
+  console.error("Session store unavailable", error.message),
+);
 await store.connect();
 app.use(
   session({
+    name: "reachflow.sid",
+    rolling: true,
     store: new RedisStore({ client: store }),
     secret: process.env.SESSION_SECRET,
     resave: false,
@@ -38,7 +46,7 @@ app.use(
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
-      maxAge: 86400000,
+      maxAge: 3600000,
     },
   }),
 );
@@ -46,8 +54,17 @@ app.use(
 app.get("/api/config", getConfig);
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 // Public auth endpoints precede the protected API routes.
+app.use(createSessionAuthentication(findAccount));
+app.get(
+  "/auth/google",
+  rateLimit("google", 20, 600000, (req) => req.ip ?? "unknown"),
+);
 app.use(authRouter);
 app.use("/api", requireAuth);
+app.post(
+  ["/api/schedule", "/api/senders"],
+  rateLimit("write", 30, 60000, (req) => req.auth!.id),
+);
 app.use(emailRouter, senderRouter, integrationRouter);
 app.use("/queues", requireAdmin, queueDashboard);
 if (process.env.NODE_ENV === "production") {

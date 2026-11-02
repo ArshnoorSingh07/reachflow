@@ -1,25 +1,42 @@
+import DOMPurify from "dompurify";
+import { ProfileAvatar } from "./ProfileAvatar";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { X, ArrowUpRight, Loader2, Mail, Clock3 } from "lucide-react";
+import {
+  ArrowUpRight,
+  Loader2,
+  Clock3,
+  ArrowLeft,
+  Star,
+  Archive,
+  Trash2,
+  RotateCcw,
+  Download,
+  File,
+} from "lucide-react";
 import { api } from "../services/api";
-import type { Email } from "../types";
+import type { Email, User } from "../types";
 import { StatusBadge } from "./StatusBadge";
 import { useDialog } from "../hooks/useDialog";
 export function EmailDetail({
   email,
-  preview,
   close,
+  user,
+  changed,
+  notify,
 }: {
   email: Email;
-  preview: boolean;
   close: () => void;
+  user?: User;
+  changed?: () => void;
+  notify?: (message: string) => void;
 }) {
-  const [data, setData] = useState<Email | null>(preview ? email : null),
-    [error, setError] = useState("");
+  const [data, setData] = useState<Email | null>(null),
+    [error, setError] = useState(""),
+    [acting, setActing] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const dismiss = useCallback(close, [close]);
   useDialog(ref, dismiss);
   useEffect(() => {
-    if (preview) return;
     const controller = new AbortController();
     api<Email>(`/api/emails/${email.id}`, { signal: controller.signal })
       .then(setData)
@@ -27,35 +44,109 @@ export function EmailDetail({
         if (e.name !== "AbortError") setError(e.message);
       });
     return () => controller.abort();
-  }, [email.id, preview]);
+  }, [email.id]);
+  async function action(input: { action?: string; starred?: boolean }) {
+    setActing(true);
+    setError("");
+    try {
+      await api(`/api/emails/${email.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+      changed?.();
+      if (input.action) {
+        notify?.(
+          input.action === "delete"
+            ? "Moved to Trash. Restore it from the Trash section."
+            : input.action === "archive"
+              ? "Email archived."
+              : "Email restored.",
+        );
+        close();
+      } else
+        setData((current) =>
+          current ? { ...current, starred: input.starred } : current,
+        );
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setActing(false);
+    }
+  }
   return (
     <div
-      className="overlay"
+      className="overlay page-overlay"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
       <div
-        className="compose detail-panel"
+        className="compose detail-panel detail-page"
         role="dialog"
         tabIndex={-1}
         aria-modal="true"
         aria-labelledby="email-detail-title"
         ref={ref}
       >
-        <div className="compose-head">
-          <span className="compose-symbol">
-            <Mail size={20} />
-          </span>
+        <div className="editor-topbar flex items-center gap-3">
           <button
             className="icon-button"
             aria-label="Close email details"
             onClick={close}
           >
-            <X size={20} />
+            <ArrowLeft size={20} />
           </button>
-          <h2 id="email-detail-title">Message details</h2>
-          <p>Everything about this send, in one place.</p>
+          <h2 id="email-detail-title">{email.subject}</h2>
+          <div className="detail-actions">
+            <button
+              className={`icon-button ${data?.starred ? "starred" : ""}`}
+              aria-label={data?.starred ? "Unstar email" : "Star email"}
+              disabled={acting || !data}
+              onClick={() => void action({ starred: !data?.starred })}
+            >
+              <Star size={18} />
+            </button>
+            {data?.deleted_at || data?.archived_at ? (
+              <button
+                className="icon-button"
+                aria-label="Restore email"
+                disabled={acting}
+                onClick={() => void action({ action: "restore" })}
+              >
+                <RotateCcw size={18} />
+              </button>
+            ) : (
+              <button
+                className="icon-button"
+                aria-label="Archive email"
+                title="Archive after delivery finishes"
+                disabled={
+                  acting ||
+                  !data ||
+                  ["scheduled", "sending"].includes(data.status)
+                }
+                onClick={() => void action({ action: "archive" })}
+              >
+                <Archive size={18} />
+              </button>
+            )}
+            {!data?.deleted_at && (
+              <button
+                className="icon-button"
+                aria-label="Move email to Trash"
+                title="Delete after delivery finishes"
+                disabled={
+                  acting ||
+                  !data ||
+                  ["scheduled", "sending"].includes(data.status)
+                }
+                onClick={() => void action({ action: "delete" })}
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
+            {user && <ProfileAvatar user={user} />}
+          </div>
         </div>
         {error ? (
           <div className="form-error">{error}</div>
@@ -68,21 +159,32 @@ export function EmailDetail({
           <div className="detail-body">
             <div className="detail-status">
               <StatusBadge status={data.status} />
-              <span>{preview ? "Sample message" : "Message record"}</span>
             </div>
-            <h2>{data.subject}</h2>
-            <dl>
+
+            <div className="message-envelope">
+              <span className="sender-initial">
+                {(data.sender_name ||
+                  data.sender_email ||
+                  "S")[0].toUpperCase()}
+              </span>
               <div>
-                <dt>From</dt>
-                <dd>
-                  {data.sender_name}
-                  <small>{data.sender_email}</small>
-                </dd>
+                <strong>{data.sender_name || "Sender"}</strong>
+                <span>{data.sender_email}</span>
+                <small>to {data.recipient}</small>
               </div>
-              <div>
-                <dt>To</dt>
-                <dd>{data.recipient}</dd>
-              </div>
+              <time>
+                {new Date(data.sent_at ?? data.scheduled_at).toLocaleString(
+                  undefined,
+                  {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  },
+                )}
+              </time>
+            </div>
+            <dl className="message-metadata">
               <div>
                 <dt>Scheduled</dt>
                 <dd>{new Date(data.scheduled_at).toLocaleString()}</dd>
@@ -94,7 +196,50 @@ export function EmailDetail({
                 </div>
               )}
             </dl>
-            <div className="message-preview">{data.body}</div>
+            {data.body_html ? (
+              <div
+                className="message-preview rich-message"
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(data.body_html, {
+                    FORBID_TAGS: [
+                      "img",
+                      "iframe",
+                      "style",
+                      "script",
+                      "form",
+                      "input",
+                    ],
+                  }),
+                }}
+              />
+            ) : (
+              <div className="message-preview">{data.body}</div>
+            )}
+            <div className="attachments-grid detail-attachments">
+              {data.attachments?.map((file) => (
+                <a
+                  className="attachment-card"
+                  key={file.id}
+                  href={`/api/emails/${data.id}/attachments/${file.id}`}
+                  download={file.name}
+                >
+                  {file.content_type.startsWith("image/") ? (
+                    <img
+                      src={`/api/emails/${data.id}/attachments/${file.id}?inline=1`}
+                      alt={file.name}
+                    />
+                  ) : (
+                    <div className="attachment-icon">
+                      <File size={30} />
+                    </div>
+                  )}
+                  <strong>{file.name}</strong>
+                  <small>
+                    {(file.size / 1024).toFixed(1)} KB <Download size={12} />
+                  </small>
+                </a>
+              ))}
+            </div>
             {data.error && (
               <div className="delivery-warning">
                 <strong>

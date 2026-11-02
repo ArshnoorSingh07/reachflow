@@ -1,4 +1,4 @@
-import type { Email, Sender, Stats, AppConfig } from "../types";
+import type { Email, Sender, Stats } from "../../frontend/src/types";
 export const previewSenders: Sender[] = [
   {
     id: "preview-alex",
@@ -11,13 +11,6 @@ export const previewSenders: Sender[] = [
     email: "partnerships@ethereal.email",
   },
 ];
-export const defaultConfig: AppConfig = {
-  minDelayMs: 2000,
-  maxHourlyLimit: 200,
-  maxRecipients: 10000,
-  googleConfigured: false,
-  slackConfigured: false,
-};
 export const previewStats: Stats = {
   scheduled: 8,
   sent: 6,
