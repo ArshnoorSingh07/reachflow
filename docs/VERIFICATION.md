@@ -1,6 +1,6 @@
 # Verification
 
-Last verified: November 2, 2026.
+Last verified: November 3, 2026.
 
 ## Automated checks
 
@@ -10,7 +10,7 @@ Last verified: November 2, 2026.
 
 See SETUP.md for the isolated test database configuration. Run `npm run test:all` with TEST_DATABASE_URL and TEST_REDIS_URL set. Without them, infrastructure integration tests are skipped.
 
-## Live checks completed
+## Local HTTPS checks completed
 
 - Real Google OAuth login and dashboard redirect.
 - Slack OAuth connection; disconnect/reconnect confirmed by the account owner.
@@ -22,6 +22,18 @@ See SETUP.md for the isolated test database configuration. Run `npm run test:all
 - A 1,000-recipient future batch was persisted and queued without sending all messages.
 - Private routes, cross-user isolation, session revocation, and secure HTTPS session cookies.
 
+## Hosted deployment checks
+
+Verified on the Azure deployment on November 3, 2026:
+
+- Valid public HTTPS and HTTP-to-HTTPS redirect.
+- API, worker, PostgreSQL, Redis, Elasticsearch, and Caddy running independently.
+- Email/password registration, authenticated sessions, secure cookies, CSRF enforcement, and logout.
+- Anonymous access to private APIs rejected.
+- Ethereal sender creation and scheduled delivery with a generated preview.
+- Rich-text content, attachment retrieval, and Elasticsearch search.
+- A future email remained queued through API and worker restarts and was sent afterward.
+
 ## Limits
 
-Ethereal captures test messages; it does not deliver to recipient inboxes. Live OAuth and Slack checks require valid local credentials and registered callback URLs. Temporary HTTPS tunnels can expire and are not permanent hosting. Recheck callbacks before recording the demo. The UI follows the supplied Figma screenshots; an exact pixel comparison has not been certified.
+Ethereal captures test messages; it does not deliver to recipient inboxes. Google and Slack OAuth require valid credentials and callback URLs registered for the deployment origin. Azure hosting consumes subscription credits. The UI follows the supplied Figma screenshots; an exact pixel comparison has not been certified.

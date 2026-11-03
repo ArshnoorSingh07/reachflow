@@ -1,0 +1,84 @@
+name: reachflow-production
+x-app: &app
+  image: reachflow:production
+  build: .
+  restart: unless-stopped
+  env_file: ${APP_ENV_FILE:-.env.production}
+  environment:
+    NODE_ENV: production
+    PORT: 4000
+    API_URL: https://${APP_DOMAIN:?Set APP_DOMAIN}
+    WEB_URL: https://${APP_DOMAIN:?Set APP_DOMAIN}
+    DATABASE_URL: postgres://reachflow:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/reachflow
+    REDIS_URL: redis://redis:6379
+    ELASTIC_URL: http://elasticsearch:9200
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    elasticsearch: {condition: service_healthy}
+services:
+  web:
+    <<: *app
+    command: ["node", "backend/dist/server.js"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+  worker:
+    <<: *app
+    command: ["node", "backend/dist/workers/email.worker.js"]
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web: {condition: service_healthy}
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reachflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: reachflow
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reachflow -d reachflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --appendfsync always --maxmemory-policy noeviction
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    volumes: ["elastic:/usr/share/elasticsearch/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+volumes:
+  postgres:
+  redis:
+  elastic:
+  caddy_data:
+  caddy_config:

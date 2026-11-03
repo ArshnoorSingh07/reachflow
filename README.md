@@ -2,11 +2,15 @@
 
 A full-stack email scheduler with a React dashboard and Express MVC backend. It uses PostgreSQL persistence, BullMQ delayed jobs, Redis throttling, Elasticsearch search, Google OAuth, Slack OAuth, and Ethereal SMTP.
 
+**[Live application](https://reachflow-arshnoor-03e93a.eastasia.cloudapp.azure.com/)**
+
 ## Getting started
 
 Prerequisites: Node.js 22.12+ with npm, Docker Compose, and your own Google OAuth and Slack app credentials. Ethereal test senders are created through the app.
 
 See **[SETUP.md](SETUP.md)** for detailed installation and Google/Slack OAuth configuration. See **[docs/API.md](docs/API.md)** for request/response documentation and **[docs/AUTHENTICATION.md](docs/AUTHENTICATION.md)** for identity, session, CSRF, and access-control behavior. Completed checks are recorded in **[docs/VERIFICATION.md](docs/VERIFICATION.md)**.
+
+Production deployment uses Docker Compose with Caddy HTTPS on an Azure Ubuntu VM. The API, worker, PostgreSQL, Redis, and Elasticsearch run as separate services with persistent data volumes. Deployment instructions are in **[deploy/AZURE.md](deploy/AZURE.md)**.
 
 ```sh
 npm ci
