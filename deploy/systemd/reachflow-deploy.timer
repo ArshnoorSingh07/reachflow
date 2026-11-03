@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Reachflow GitHub main every minute
+
+[Timer]
+OnBootSec=90s
+OnUnitInactiveSec=60s
+RandomizedDelaySec=10s
+Unit=reachflow-deploy.service
+
+[Install]
+WantedBy=timers.target
